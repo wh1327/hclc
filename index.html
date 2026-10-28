@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>融资租赁还款计划测算（百元取整）</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; padding: 12px; background: #f5f6fa; color: #222; font-size: 14px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .row > label { flex: 0 0 96px; font-size: 13px; color: #555; margin: 0; text-align: right; }
+  .row > input { width: 150px; margin: 0; padding: 7px 9px; font-size: 13px; border: 1px solid #ddd; border-radius: 7px; background: #fff; box-sizing: border-box; color: #222; }
+  .row > input[readonly] { background: #f0f0f0; color: #666; }
+  .row > input[type="date"] { font-family: inherit; }
+  .row > input.invalid { border-color: #dc2626; background: #fff5f5; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btn-row button { flex: 0 0 auto; padding: 10px 16px; font-size: 14px; border: none; border-radius: 8px; font-weight: 600; color: #fff; }
+  .btn-primary { background: #2563eb; }
+  .btn-primary:active { background: #1d4ed8; }
+  .btn-secondary { background: #16a34a; }
+  .btn-secondary:active { background: #15803d; }
+  .btn-ghost { background: #e5e7eb; color: #333 !important; }
+  .btn-ghost:active { background: #d1d5db; }
+  .summary { font-size: 13px; line-height: 1.7; }
+  .summary b { color: #2563eb; }
+
+  .table-wrap { overflow-x: auto; max-height: 60vh; overflow-y: auto; }
+  table { border-collapse: collapse; font-size: 13px; width: auto; }
+  th, td { padding: 7px 14px; border-bottom: 1px solid #eee; white-space: nowrap; }
+  th { background: #f0f3fa; color: #555; font-weight: 600; position: sticky; top: 0; text-align: center; }
+  td { text-align: right; }
+  td:first-child, td:nth-child(2) { text-align: center; }
+
+  .err { color: #dc2626; font-size: 13px; margin-top: 6px; min-height: 18px; }
+  #unequalArea { display: none; margin-top: 10px; }
+  .unequal-hint { font-size: 13px; color: #666; line-height: 1.6; padding: 10px 12px; background: #f7f8fb; border-radius: 8px; margin-bottom: 10px; }
+  .unequal-list { max-height: 300px; overflow-y: auto; padding-right: 4px; }
+  .unequal-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; white-space: nowrap; }
+  .unequal-row .idx { flex: 0 0 50px; font-size: 12px; color: #555; }
+  .unequal-row .date { flex: 0 0 90px; font-size: 12px; color: #888; text-align: center; }
+  .unequal-row input { flex: 0 0 130px; margin: 0; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 7px; color: #222; }
+  .unequal-row input.invalid { border-color: #dc2626; background: #fff5f5; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; margin: 10px 0; }
+  .chk input { width: auto; margin: 0; }
+</style>
+</head>
+<body>
+<h1>融资租赁还款计划测算（百元取整）</h1>
+
+<div class="card">
+  <div class="row"><label>设备金额（元）</label><input id="equipment" type="text" inputmode="decimal" oninput="onAmountInput(this);validate()" onblur="onAmountBlur(this);calcLoan();validate()"></div>
+  <div class="row"><label>首付金额（元）</label><input id="downPayment" type="text" inputmode="decimal" oninput="onAmountInput(this);calcLoan();validate()" onblur="onAmountBlur(this);calcLoan();validate()"></div>
+  <div class="row"><label>首付比例</label><input id="downRatio" type="text" readonly></div>
+  <div class="row"><label>放贷金额（元）</label><input id="loanAmount" type="text" readonly></div>
+  <div class="row"><label>年利率(%)</label><input id="annualRate" type="text" inputmode="decimal" oninput="onRateInput(this);validate()" onblur="onRateBlur(this);validate()"></div>
+  <div class="row"><label>总期数</label><input id="terms" type="text" inputmode="numeric" oninput="onIntInput(this);onTermsChange();validate()"></div>
+  <div class="row"><label>租赁开始日</label><input id="startDate" type="date" onchange="renderUnequalInputs();validate()"></div>
+  <div class="row"><label>支付开始日</label><input id="payStartDate" type="date" onchange="renderUnequalInputs();validate()"></div>
+
+  <div class="chk">
+    <input type="checkbox" id="useUnequal" onchange="toggleUnequal();validate()">
+    <label for="useUnequal" style="margin:0">不均等还款</label>
+  </div>
+
+  <div id="unequalArea">
+    <div class="unequal-hint">填写指定期数的还款金额（元），留空的期数按均等规则自动计算。</div>
+    <div class="unequal-list" id="unequalInputs"></div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-primary" onclick="generate()">生成还款计划</button>
+    <button class="btn-secondary" onclick="exportExcel()">导出到 Excel</button>
+    <button class="btn-ghost" onclick="clearOutput()">清除输出结果</button>
+    <button class="btn-ghost" onclick="clearPage()">清除页面</button>
+  </div>
+  <div id="error" class="err"></div>
+</div>
+
+<div class="card" id="summaryCard" style="display:none">
+  <div class="summary" id="summary"></div>
+</div>
+
+<div class="card" id="tableCard" style="display:none">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>期数</th><th>支付日期</th><th>租金</th><th>本金</th><th>利息</th><th>剩余本金</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const fmt = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let lastRows = null;
+
+function parseNumText(t) {
+  if (!t) return NaN;
+  const s = t.replace(/,/g, '').trim();
+  if (s === '') return NaN;
+  return parseFloat(s);
+}
+function onAmountInput(el) {
+  const caretAtEnd = el.selectionStart === el.value.length;
+  const raw = el.value.replace(/,/g, '').replace(/[^\d.]/g, '');
+  const parts = raw.split('.');
+  let intPart = parts[0].replace(/^0+(?=\d)/, '');
+  let decPart = parts.length > 1 ? parts.slice(1).join('').slice(0, 2) : '';
+  let s = intPart;
+  if (parts.length > 1) s += '.' + decPart;
+  if (s === '' || s === '.') { el.value = ''; return; }
+  const hasDot = s.includes('.');
+  const [i, d] = s.split('.');
+  const iFmt = i ? Number(i).toLocaleString('zh-CN') : '0';
+  el.value = hasDot ? iFmt + '.' + (d || '') : iFmt;
+  if (caretAtEnd) el.setSelectionRange(el.value.length, el.value.length);
+}
+function onAmountBlur(el) {
+  const v = parseNumText(el.value);
+  if (isNaN(v)) { el.value = ''; return; }
+  el.value = fmt.format(v);
+}
+function onRateInput(el) {
+  const raw = el.value.replace(/[^\d.]/g, '');
+  const parts = raw.split('.');
+  let s = parts[0] + (parts.length > 1 ? '.' + parts.slice(1).join('').slice(0, 2) : '');
+  el.value = s;
+}
+function onRateBlur(el) {
+  const v = parseFloat(el.value);
+  if (isNaN(v)) { el.value = ''; return; }
+  el.value = v.toFixed(2);
+}
+function onIntInput(el) {
+  el.value = el.value.replace(/[^\d]/g, '');
+}
+
+function num(id) {
+  return parseNumText(document.getElementById(id).value);
+}
+
+function calcLoan() {
+  const eq = num('equipment');
+  const dp = num('downPayment');
+  const loanEl = document.getElementById('loanAmount');
+  const ratioEl = document.getElementById('downRatio');
+  if (!isNaN(eq) && !isNaN(dp)) {
+    loanEl.value = fmt.format(eq - dp);
+    if (eq > 0) {
+      ratioEl.value = (dp / eq * 100).toFixed(2) + '%';
+    } else {
+      ratioEl.value = '';
+    }
+  } else {
+    loanEl.value = '';
+    ratioEl.value = '';
+  }
+}
+
+function onTermsChange() {
+  if (document.getElementById('useUnequal').checked) renderUnequalInputs();
+}
+
+function toggleUnequal() {
+  const on = document.getElementById('useUnequal').checked;
+  document.getElementById('unequalArea').style.display = on ? 'block' : 'none';
+  if (on) renderUnequalInputs();
+}
+
+// ---------- 实时校验 ----------
+function setInvalid(id, bad) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (bad) el.classList.add('invalid');
+  else el.classList.remove('invalid');
+}
+
+function validate() {
+  const errEl = document.getElementById('error');
+  // 先清掉所有高亮
+  ['equipment','downPayment','annualRate','terms','startDate','payStartDate'].forEach(id => setInvalid(id, false));
+
+  const eq = num('equipment');
+  const dp = num('downPayment');
+  const annual = num('annualRate');
+  const nRaw = document.getElementById('terms').value.trim();
+  const n = parseInt(nRaw, 10);
+  const startStr = document.getElementById('startDate').value;
+  const payStartStr = document.getElementById('payStartDate').value;
+
+  // 设备金额
+  if (document.getElementById('equipment').value.trim() === '') { errEl.textContent = ''; return false; }
+  if (isNaN(eq) || eq <= 0) { errEl.textContent = '设备金额必须大于 0。'; setInvalid('equipment', true); return false; }
+
+  // 首付金额
+  if (document.getElementById('downPayment').value.trim() === '') { errEl.textContent = ''; return false; }
+  if (isNaN(dp) || dp < 0) { errEl.textContent = '首付金额不能小于 0。'; setInvalid('downPayment', true); return false; }
+  if (dp >= eq) { errEl.textContent = '首付金额必须小于设备金额。'; setInvalid('downPayment', true); return false; }
+
+  // 放贷金额（由设备金额 - 首付金额得出）
+  const P = eq - dp;
+  if (!(P > 0)) { errEl.textContent = '放贷金额必须大于 0。'; return false; }
+
+  // 年利率
+  if (document.getElementById('annualRate').value.trim() === '') { errEl.textContent = ''; return false; }
+  if (isNaN(annual) || annual <= 0) { errEl.textContent = '年利率必须大于 0。'; setInvalid('annualRate', true); return false; }
+
+  // 总期数
+  if (nRaw === '') { errEl.textContent = ''; return false; }
+  if (!(n >= 2) || n > 60) { errEl.textContent = '总期数必须在 2~60 之间。'; setInvalid('terms', true); return false; }
+
+  // 日期
+  if (!startStr || !payStartStr) { errEl.textContent = ''; return false; }
+  const L_START = parseDate(startStr);
+  const P_START = parseDate(payStartStr);
+  if (dateDiffMonths(L_START, P_START) !== 1) {
+    errEl.textContent = '支付开始日必须为租赁开始日的次月。';
+    setInvalid('payStartDate', true);
+    return false;
+  }
+
+  // 不均等金额
+  if (document.getElementById('useUnequal').checked) {
+    for (let i = 1; i <= n; i++) {
+      const el = document.getElementById('u_' + i);
+      if (el && el.value.trim() !== '') {
+        const v = parseNumText(el.value);
+        if (isNaN(v) || v < 0) {
+          errEl.textContent = `第 ${i} 期金额无效。`;
+          el.classList.add('invalid');
+          return false;
+        } else {
+          el.classList.remove('invalid');
+        }
+      }
+    }
+  }
+
+  errEl.textContent = '';
+  return true;
+}
+
+function clearOutput() {
+  lastRows = null;
+  document.getElementById('summaryCard').style.display = 'none';
+  document.getElementById('tableCard').style.display = 'none';
+  document.getElementById('summary').innerHTML = '';
+  document.getElementById('tbody').innerHTML = '';
+}
+
+function clearPage() {
+  clearOutput();
+  ['equipment','downPayment','downRatio','loanAmount','annualRate','terms','startDate','payStartDate'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('useUnequal').checked = false;
+  document.getElementById('unequalArea').style.display = 'none';
+  document.getElementById('unequalInputs').innerHTML = '';
+  document.getElementById('error').textContent = '';
+  ['equipment','downPayment','annualRate','terms','startDate','payStartDate'].forEach(id => setInvalid(id, false));
+}
+
+function parseDate(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function formatDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function addMonths(date, months) {
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  const target = new Date(y, m + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d, lastDay));
+  return target;
+}
+function dateDiffMonths(a, b) {
+  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+function dayDiff(a, b) {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+function avoidWeekendVBA(d) {
+  const wd = d.getDay();
+  if (wd === 0) {
+    const r = new Date(d); r.setDate(r.getDate() - 2);
+    if (r.getMonth() !== d.getMonth()) { r.setDate(d.getDate() + 1); }
+    return r;
+  }
+  if (wd === 6) {
+    const r = new Date(d); r.setDate(r.getDate() - 1);
+    if (r.getMonth() !== d.getMonth()) { r.setDate(d.getDate() + 2); }
+    return r;
+  }
+  return d;
+}
+function vbaRound(x, digits) {
+  const f = Math.pow(10, digits);
+  const v = x * f;
+  const floor = Math.floor(v);
+  const diff = v - floor;
+  let r;
+  if (Math.abs(diff - 0.5) < 1e-9) r = (floor % 2 === 0) ? floor : floor + 1;
+  else r = Math.round(v);
+  return r / f;
+}
+
+function computePayDates(n, L_START, P_START, W_SUEOKI) {
+  const M_DATE = [], M_SPRIT = [];
+  for (let i = 1; i <= n; i++) {
+    let d = addMonths(P_START, i - W_SUEOKI);
+    d = avoidWeekendVBA(d);
+    M_DATE.push(d);
+    if (i === 1) M_SPRIT.push(dayDiff(L_START, d) + 1);
+    else M_SPRIT.push(dayDiff(M_DATE[i - 2], d));
+  }
+  return { M_DATE, M_SPRIT };
+}
+
+function renderUnequalInputs() {
+  const on = document.getElementById('useUnequal').checked;
+  const area = document.getElementById('unequalInputs');
+  if (!on) { area.innerHTML = ''; return; }
+  const n = parseInt(document.getElementById('terms').value, 10);
+  const startStr = document.getElementById('startDate').value;
+  const payStartStr = document.getElementById('payStartDate').value;
+  if (!(n > 0) || !startStr || !payStartStr) { area.innerHTML = ''; return; }
+
+  const L_START = parseDate(startStr);
+  const P_START = parseDate(payStartStr);
+  if (dateDiffMonths(L_START, P_START) !== 1) { area.innerHTML = ''; return; }
+  const W_SUEOKI = dateDiffMonths(L_START, P_START);
+  const { M_DATE } = computePayDates(n, L_START, P_START, W_SUEOKI);
+
+  const old = {};
+  for (let i = 1; i <= n; i++) {
+    const el = document.getElementById('u_' + i);
+    if (el && el.value !== '') old[i] = el.value;
+  }
+
+  let html = '';
+  for (let i = 1; i <= n; i++) {
+    const val = old[i] !== undefined ? `value="${old[i]}"` : '';
+    html += `<div class="unequal-row">
+      <span class="idx">第 ${i} 期</span>
+      <span class="date">${formatDate(M_DATE[i - 1])}</span>
+      <input type="text" inputmode="decimal" id="u_${i}" placeholder="留空则均等" oninput="onAmountInput(this);validate()" onblur="onAmountBlur(this);validate()" ${val}>
+    </div>`;
+  }
+  area.innerHTML = html;
+}
+
+function generate() {
+  const errEl = document.getElementById('error');
+  document.getElementById('summaryCard').style.display = 'none';
+  document.getElementById('tableCard').style.display = 'none';
+  lastRows = null;
+
+  // 点生成时再校验一次，有错就停
+  if (!validate()) {
+    if (!errEl.textContent) errEl.textContent = '请先补全必填项。';
+    return;
+  }
+
+  const eq = num('equipment');
+  const dp = num('downPayment');
+  const P = num('loanAmount');
+  const annual = num('annualRate');
+  const n = parseInt(document.getElementById('terms').value, 10);
+  const startStr = document.getElementById('startDate').value;
+  const payStartStr = document.getElementById('payStartDate').value;
+  const useUnequal = document.getElementById('useUnequal').checked;
+
+  const L_START = parseDate(startStr);
+  const P_START = parseDate(payStartStr);
+  const W_SUEOKI = dateDiffMonths(L_START, P_START);
+  const W_RATE_M = vbaRound(annual / 100 / 12, 8);
+  const W_RATE_D = vbaRound(annual / 100 / 360, 8);
+
+  const { M_DATE, M_SPRIT } = computePayDates(n, L_START, P_START, W_SUEOKI);
+
+  const M_INEQUAL = [];
+  const M_INQ_FLG = [];
+  for (let i = 1; i <= n; i++) {
+    if (useUnequal) {
+      const el = document.getElementById('u_' + i);
+      if (el && el.value !== '') {
+        M_INEQUAL.push(parseNumText(el.value));
+        M_INQ_FLG.push('F');
+      } else {
+        M_INEQUAL.push(0);
+        M_INQ_FLG.push('');
+      }
+    } else {
+      M_INEQUAL.push(0);
+      M_INQ_FLG.push('');
+    }
+  }
+
+  const W_EOP = n;
+
+  const M_CNT_FLG = new Array(n).fill('');
+  let W_CNT_FLG = '';
+  for (let i = 1; i <= n; i++) {
+    if (M_INQ_FLG[i - 1] === 'F') {
+      if (M_INEQUAL[i - 1] > 0) {
+        if (W_CNT_FLG === '') { W_CNT_FLG = 'S'; M_CNT_FLG[i - 1] = 'S'; }
+      }
+    } else {
+      if (W_CNT_FLG === '') { W_CNT_FLG = 'S'; M_CNT_FLG[i - 1] = 'S'; }
+    }
+  }
+
+  const HENSAI_0 = vbaRound(P * W_RATE_M / (1 - Math.pow(1 + W_RATE_M, -n)), 0);
+
+  function detailCalc(HENSAI_N, HENSAI_P) {
+    const PAY = new Array(n).fill(0);
+    const PRIN = new Array(n).fill(0);
+    const INT = new Array(n).fill(0);
+    const BAL = new Array(n).fill(0);
+    for (let i = 1; i <= W_EOP; i++) {
+      if (M_CNT_FLG[i - 1] === 'N') {
+        PAY[i - 1] = 0;
+      } else {
+        if (M_INQ_FLG[i - 1] === 'F') {
+          PAY[i - 1] = M_INEQUAL[i - 1];
+        } else {
+          PAY[i - 1] = HENSAI_N;
+        }
+      }
+      if (M_CNT_FLG[i - 1] === 'S') {
+        PAY[i - 1] = vbaRound(PAY[i - 1] + HENSAI_P - HENSAI_N, 2);
+      }
+      if (i === 1) {
+        INT[0] = vbaRound(P * W_RATE_D * M_SPRIT[0], 2);
+        PRIN[0] = vbaRound(PAY[0] - INT[0], 2);
+        BAL[0] = vbaRound(P - PRIN[0], 2);
+      } else {
+        INT[i - 1] = vbaRound(BAL[i - 2] * W_RATE_D * M_SPRIT[i - 1], 2);
+        PRIN[i - 1] = vbaRound(PAY[i - 1] - INT[i - 1], 2);
+        BAL[i - 1] = vbaRound(BAL[i - 2] - PRIN[i - 1], 2);
+      }
+    }
+    return { PAY, PRIN, INT, BAL };
+  }
+
+  let HENSAI_N = HENSAI_0;
+  let HENSAI_P = HENSAI_0;
+  let result = detailCalc(HENSAI_N, HENSAI_P);
+  let FLG = '', FLG2 = '';
+  let N_loop = 1, W_ADJUST = 1;
+  function balLast() { return result.BAL[W_EOP - 1]; }
+
+  let guard = 0;
+  while (!(W_ADJUST === 0 || (FLG !== '' && FLG2 !== '' && FLG !== FLG2))) {
+    if (++guard > 5000) break;
+    HENSAI_N = vbaRound((HENSAI_N + W_ADJUST) / 100, 0) * 100;
+    HENSAI_P = HENSAI_N;
+    result = detailCalc(HENSAI_N, HENSAI_P);
+    if (N_loop === 1) { FLG = balLast() < 0 ? '-' : '+'; N_loop = 0; }
+    if (balLast() !== 0) {
+      if (balLast() < 0) { W_ADJUST = vbaRound((balLast() / W_EOP + 10) / 100, 0) * 100; FLG2 = '-'; }
+      else { W_ADJUST = vbaRound((balLast() / W_EOP - 10) / 100, 0) * 100; FLG2 = '+'; }
+    } else W_ADJUST = 0;
+  }
+
+  guard = 0;
+  while (balLast() < 0) {
+    if (++guard > 100000) break;
+    HENSAI_N = HENSAI_N - 100;
+    HENSAI_P = HENSAI_N;
+    result = detailCalc(HENSAI_N, HENSAI_P);
+  }
+
+  if (balLast() !== 0) {
+    let FLG_A = balLast() < 0 ? '-' : '+';
+    let FLG2_A = FLG_A;
+    let W_ADJUST_A = 0;
+    for (let k = 1; k <= 100; k++) {
+      if (balLast() === 0) break;
+      FLG2_A = balLast() < 0 ? '-' : '+';
+      if (FLG_A !== FLG2_A) break;
+      const b = balLast();
+      if (b >= 100) W_ADJUST_A += 50;
+      else if (b >= 10) W_ADJUST_A += 5;
+      else if (b >= 1) W_ADJUST_A += 0.5;
+      else if (b >= 0.1) W_ADJUST_A += 0.05;
+      else if (b > 0) W_ADJUST_A += 0.01;
+      else if (b <= -100) W_ADJUST_A -= 50;
+      else if (b <= -10) W_ADJUST_A -= 5;
+      else if (b <= -1) W_ADJUST_A -= 0.5;
+      else if (b <= 0.1) W_ADJUST_A -= 0.05;
+      else if (b < 0) W_ADJUST_A -= 0.01;
+      HENSAI_P = vbaRound((HENSAI_P + W_ADJUST_A) / 100, 0) * 100;
+      result = detailCalc(HENSAI_N, HENSAI_P);
+    }
+    guard = 0;
+    while (balLast() < 0) {
+      if (++guard > 100000) break;
+      HENSAI_P = HENSAI_P - 1;
+      result = detailCalc(HENSAI_N, HENSAI_P);
+    }
+  }
+
+  if (result.BAL[W_EOP - 1] !== 0) {
+    const adj = result.BAL[W_EOP - 1];
+    result.INT[W_EOP - 1] = result.INT[W_EOP - 1] - adj;
+    result.PRIN[W_EOP - 1] = result.PAY[W_EOP - 1] - result.INT[W_EOP - 1];
+    result.BAL[W_EOP - 1] = result.BAL[W_EOP - 2] - result.PRIN[W_EOP - 1];
+  }
+
+  const rows = [];
+  let totalPay = 0, totalInterest = 0;
+  for (let i = 1; i <= W_EOP; i++) {
+    rows.push({
+      i,
+      date: formatDate(M_DATE[i - 1]),
+      days: M_SPRIT[i - 1],
+      pay: result.PAY[i - 1],
+      principal: result.PRIN[i - 1],
+      interest: result.INT[i - 1],
+      balance: result.BAL[i - 1]
+    });
+    totalPay += result.PAY[i - 1];
+    totalInterest += result.INT[i - 1];
+  }
+
+  lastRows = rows;
+
+  if (rows.length > 0 && rows[0].pay <= 0) {
+    errEl.textContent = '警告：第 1 期租金计算为 0 或负数，请检查参数或不均等金额填写。';
+  }
+
+  document.getElementById('summary').innerHTML =
+    `设备金额：<b>${fmt.format(eq)}</b> 元<br>` +
+    `首付金额：<b>${fmt.format(dp)}</b> 元　首付比例：<b>${(dp / eq * 100).toFixed(2)}%</b><br>` +
+    `放贷金额：<b>${fmt.format(P)}</b> 元<br>` +
+    `年利率：<b>${annual.toFixed(2)}%</b><br>` +
+    `总期数：<b>${n}</b> 期<br>` +
+    `租金合计：<b>${fmt.format(totalPay)}</b> 元<br>` +
+    `利息合计：<b>${fmt.format(totalInterest)}</b> 元`;
+  document.getElementById('summaryCard').style.display = 'block';
+
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = rows.map(r =>
+    `<tr>
+      <td>${r.i}</td>
+      <td>${r.date}</td>
+      <td>${fmt.format(r.pay)}</td>
+      <td>${fmt.format(r.principal)}</td>
+      <td>${fmt.format(r.interest)}</td>
+      <td>${fmt.format(r.balance)}</td>
+    </tr>`
+  ).join('');
+  document.getElementById('tableCard').style.display = 'block';
+}
+
+function exportExcel() {
+  if (!lastRows) return;
+  const header = ['期数', '支付日期', '租金', '本金', '利息', '剩余本金'];
+  const lines = [header.join(',')];
+  lastRows.forEach(r => {
+    lines.push([r.i, r.date, r.pay.toFixed(2), r.principal.toFixed(2), r.interest.toFixed(2), r.balance.toFixed(2)].join(','));
+  });
+  const csv = '\ufeff' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '还款计划.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
