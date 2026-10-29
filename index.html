@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>融资租赁还款计划测算（百元取整）</title>
+<title>融资租赁还款计划测算</title>
 <style>
   body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; padding: 12px; background: #f5f6fa; color: #222; font-size: 14px; }
   h1 { font-size: 18px; margin: 0 0 12px; }
@@ -41,12 +41,13 @@
   .unequal-row .date { flex: 0 0 90px; font-size: 12px; color: #888; text-align: center; }
   .unequal-row input { flex: 0 0 130px; margin: 0; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 7px; color: #222; }
   .unequal-row input.invalid { border-color: #dc2626; background: #fff5f5; }
-  .chk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; margin: 10px 0; }
+  .chk-row { display: flex; align-items: center; gap: 20px; margin: 10px 0; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #555; }
   .chk input { width: auto; margin: 0; }
 </style>
 </head>
 <body>
-<h1>融资租赁还款计划测算（百元取整）</h1>
+<h1>融资租赁还款计划测算</h1>
 
 <div class="card">
   <div class="row"><label>设备金额（元）</label><input id="equipment" type="text" inputmode="decimal" oninput="onAmountInput(this);validate()" onblur="onAmountBlur(this);calcLoan();validate()"></div>
@@ -58,9 +59,15 @@
   <div class="row"><label>租赁开始日</label><input id="startDate" type="date" onchange="renderUnequalInputs();validate()"></div>
   <div class="row"><label>支付开始日</label><input id="payStartDate" type="date" onchange="renderUnequalInputs();validate()"></div>
 
-  <div class="chk">
-    <input type="checkbox" id="useUnequal" onchange="toggleUnequal();validate()">
-    <label for="useUnequal" style="margin:0">不均等还款</label>
+  <div class="chk-row">
+    <div class="chk">
+      <input type="checkbox" id="useUnequal" onchange="toggleUnequal();validate()">
+      <label for="useUnequal" style="margin:0">不均等还款</label>
+    </div>
+    <div class="chk">
+      <input type="checkbox" id="round100" checked onchange="validate()">
+      <label for="round100" style="margin:0">百元取整</label>
+    </div>
   </div>
 
   <div id="unequalArea">
@@ -169,7 +176,6 @@ function toggleUnequal() {
   if (on) renderUnequalInputs();
 }
 
-// ---------- 实时校验 ----------
 function setInvalid(id, bad) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -179,7 +185,6 @@ function setInvalid(id, bad) {
 
 function validate() {
   const errEl = document.getElementById('error');
-  // 先清掉所有高亮
   ['equipment','downPayment','annualRate','terms','startDate','payStartDate'].forEach(id => setInvalid(id, false));
 
   const eq = num('equipment');
@@ -190,28 +195,22 @@ function validate() {
   const startStr = document.getElementById('startDate').value;
   const payStartStr = document.getElementById('payStartDate').value;
 
-  // 设备金额
   if (document.getElementById('equipment').value.trim() === '') { errEl.textContent = ''; return false; }
   if (isNaN(eq) || eq <= 0) { errEl.textContent = '设备金额必须大于 0。'; setInvalid('equipment', true); return false; }
 
-  // 首付金额
   if (document.getElementById('downPayment').value.trim() === '') { errEl.textContent = ''; return false; }
   if (isNaN(dp) || dp < 0) { errEl.textContent = '首付金额不能小于 0。'; setInvalid('downPayment', true); return false; }
   if (dp >= eq) { errEl.textContent = '首付金额必须小于设备金额。'; setInvalid('downPayment', true); return false; }
 
-  // 放贷金额（由设备金额 - 首付金额得出）
   const P = eq - dp;
   if (!(P > 0)) { errEl.textContent = '放贷金额必须大于 0。'; return false; }
 
-  // 年利率
   if (document.getElementById('annualRate').value.trim() === '') { errEl.textContent = ''; return false; }
   if (isNaN(annual) || annual <= 0) { errEl.textContent = '年利率必须大于 0。'; setInvalid('annualRate', true); return false; }
 
-  // 总期数
   if (nRaw === '') { errEl.textContent = ''; return false; }
   if (!(n >= 2) || n > 60) { errEl.textContent = '总期数必须在 2~60 之间。'; setInvalid('terms', true); return false; }
 
-  // 日期
   if (!startStr || !payStartStr) { errEl.textContent = ''; return false; }
   const L_START = parseDate(startStr);
   const P_START = parseDate(payStartStr);
@@ -221,7 +220,6 @@ function validate() {
     return false;
   }
 
-  // 不均等金额
   if (document.getElementById('useUnequal').checked) {
     for (let i = 1; i <= n; i++) {
       const el = document.getElementById('u_' + i);
@@ -256,6 +254,7 @@ function clearPage() {
     document.getElementById(id).value = '';
   });
   document.getElementById('useUnequal').checked = false;
+  document.getElementById('round100').checked = true;
   document.getElementById('unequalArea').style.display = 'none';
   document.getElementById('unequalInputs').innerHTML = '';
   document.getElementById('error').textContent = '';
@@ -357,13 +356,17 @@ function renderUnequalInputs() {
   area.innerHTML = html;
 }
 
+function presentValueAtStart(amount, payIndex, W_RATE_D, L_START, M_DATE) {
+  const days = dayDiff(L_START, M_DATE[payIndex - 1]);
+  return amount / Math.pow(1 + W_RATE_D, days);
+}
+
 function generate() {
   const errEl = document.getElementById('error');
   document.getElementById('summaryCard').style.display = 'none';
   document.getElementById('tableCard').style.display = 'none';
   lastRows = null;
 
-  // 点生成时再校验一次，有错就停
   if (!validate()) {
     if (!errEl.textContent) errEl.textContent = '请先补全必填项。';
     return;
@@ -377,6 +380,7 @@ function generate() {
   const startStr = document.getElementById('startDate').value;
   const payStartStr = document.getElementById('payStartDate').value;
   const useUnequal = document.getElementById('useUnequal').checked;
+  const round100 = document.getElementById('round100').checked;
 
   const L_START = parseDate(startStr);
   const P_START = parseDate(payStartStr);
@@ -406,6 +410,25 @@ function generate() {
 
   const W_EOP = n;
 
+  // 先剥离不均等金额现值
+  let unevenPV = 0;
+  let unevenCount = 0;
+  for (let i = 1; i <= n; i++) {
+    if (M_INQ_FLG[i - 1] === 'F' && M_INEQUAL[i - 1] > 0) {
+      unevenPV += presentValueAtStart(M_INEQUAL[i - 1], i, W_RATE_D, L_START, M_DATE);
+      unevenCount++;
+    }
+  }
+  const equalCount = n - unevenCount;
+  const netPrincipal = P - unevenPV;
+
+  if (!(netPrincipal > 0) || equalCount <= 0) {
+    errEl.textContent = '不均等金额现值已覆盖全部本金，无法计算均等月供，请调整不均等金额。';
+    return;
+  }
+
+  const HENSAI_0 = vbaRound(netPrincipal * W_RATE_M / (1 - Math.pow(1 + W_RATE_M, -equalCount)), 0);
+
   const M_CNT_FLG = new Array(n).fill('');
   let W_CNT_FLG = '';
   for (let i = 1; i <= n; i++) {
@@ -418,22 +441,16 @@ function generate() {
     }
   }
 
-  const HENSAI_0 = vbaRound(P * W_RATE_M / (1 - Math.pow(1 + W_RATE_M, -n)), 0);
-
   function detailCalc(HENSAI_N, HENSAI_P) {
     const PAY = new Array(n).fill(0);
     const PRIN = new Array(n).fill(0);
     const INT = new Array(n).fill(0);
     const BAL = new Array(n).fill(0);
     for (let i = 1; i <= W_EOP; i++) {
-      if (M_CNT_FLG[i - 1] === 'N') {
-        PAY[i - 1] = 0;
+      if (M_INQ_FLG[i - 1] === 'F') {
+        PAY[i - 1] = M_INEQUAL[i - 1];
       } else {
-        if (M_INQ_FLG[i - 1] === 'F') {
-          PAY[i - 1] = M_INEQUAL[i - 1];
-        } else {
-          PAY[i - 1] = HENSAI_N;
-        }
+        PAY[i - 1] = HENSAI_N;
       }
       if (M_CNT_FLG[i - 1] === 'S') {
         PAY[i - 1] = vbaRound(PAY[i - 1] + HENSAI_P - HENSAI_N, 2);
@@ -458,23 +475,38 @@ function generate() {
   let N_loop = 1, W_ADJUST = 1;
   function balLast() { return result.BAL[W_EOP - 1]; }
 
+  function adjustHENSAI_N(val, adj) {
+    if (round100) return vbaRound((val + adj) / 100, 0) * 100;
+    return val + adj;
+  }
+  function adjustHENSAI_P(val, adj) {
+    if (round100) return vbaRound((val + adj) / 100, 0) * 100;
+    return val + adj;
+  }
+
   let guard = 0;
   while (!(W_ADJUST === 0 || (FLG !== '' && FLG2 !== '' && FLG !== FLG2))) {
     if (++guard > 5000) break;
-    HENSAI_N = vbaRound((HENSAI_N + W_ADJUST) / 100, 0) * 100;
+    HENSAI_N = adjustHENSAI_N(HENSAI_N, W_ADJUST);
     HENSAI_P = HENSAI_N;
     result = detailCalc(HENSAI_N, HENSAI_P);
     if (N_loop === 1) { FLG = balLast() < 0 ? '-' : '+'; N_loop = 0; }
     if (balLast() !== 0) {
-      if (balLast() < 0) { W_ADJUST = vbaRound((balLast() / W_EOP + 10) / 100, 0) * 100; FLG2 = '-'; }
-      else { W_ADJUST = vbaRound((balLast() / W_EOP - 10) / 100, 0) * 100; FLG2 = '+'; }
+      const denom = equalCount > 0 ? equalCount : W_EOP;
+      if (round100) {
+        if (balLast() < 0) { W_ADJUST = vbaRound((balLast() / denom + 10) / 100, 0) * 100; FLG2 = '-'; }
+        else { W_ADJUST = vbaRound((balLast() / denom - 10) / 100, 0) * 100; FLG2 = '+'; }
+      } else {
+        if (balLast() < 0) { W_ADJUST = vbaRound(balLast() / denom + 0.5, 0); FLG2 = '-'; }
+        else { W_ADJUST = vbaRound(balLast() / denom - 0.5, 0); FLG2 = '+'; }
+      }
     } else W_ADJUST = 0;
   }
 
   guard = 0;
   while (balLast() < 0) {
     if (++guard > 100000) break;
-    HENSAI_N = HENSAI_N - 100;
+    HENSAI_N = round100 ? HENSAI_N - 100 : HENSAI_N - 1;
     HENSAI_P = HENSAI_N;
     result = detailCalc(HENSAI_N, HENSAI_P);
   }
@@ -498,13 +530,13 @@ function generate() {
       else if (b <= -1) W_ADJUST_A -= 0.5;
       else if (b <= 0.1) W_ADJUST_A -= 0.05;
       else if (b < 0) W_ADJUST_A -= 0.01;
-      HENSAI_P = vbaRound((HENSAI_P + W_ADJUST_A) / 100, 0) * 100;
+      HENSAI_P = adjustHENSAI_P(HENSAI_P, W_ADJUST_A);
       result = detailCalc(HENSAI_N, HENSAI_P);
     }
     guard = 0;
     while (balLast() < 0) {
       if (++guard > 100000) break;
-      HENSAI_P = HENSAI_P - 1;
+      HENSAI_P = round100 ? HENSAI_P - 1 : HENSAI_P - 0.01;
       result = detailCalc(HENSAI_N, HENSAI_P);
     }
   }
@@ -543,7 +575,7 @@ function generate() {
     `首付金额：<b>${fmt.format(dp)}</b> 元　首付比例：<b>${(dp / eq * 100).toFixed(2)}%</b><br>` +
     `放贷金额：<b>${fmt.format(P)}</b> 元<br>` +
     `年利率：<b>${annual.toFixed(2)}%</b><br>` +
-    `总期数：<b>${n}</b> 期<br>` +
+    `总期数：<b>${n}</b> 期　模式：<b>${round100 ? '百元取整' : '非百元取整'}</b><br>` +
     `租金合计：<b>${fmt.format(totalPay)}</b> 元<br>` +
     `利息合计：<b>${fmt.format(totalInterest)}</b> 元`;
   document.getElementById('summaryCard').style.display = 'block';
